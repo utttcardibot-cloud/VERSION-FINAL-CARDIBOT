@@ -1,0 +1,93 @@
+version: "3.9"
+
+services:
+
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: postgresBD_v1
+    restart: always
+    environment:
+      POSTGRES_USER: AdminUt
+      POSTGRES_PASSWORD: AdminUt123
+      POSTGRES_DB: ut_rag_db
+    volumes:
+      - postgres_data_v1:/var/lib/postgresql/data
+    networks:
+      - cardibot_net_v1
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_v1
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data_v1:/data
+    networks:
+      - cardibot_net_v1
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_v1
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data_v1:/var/lib/rabbitmq
+    networks:
+      - cardibot_net_v1
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cardibotdev-backend:latest
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    expose:
+      - "8000"
+    depends_on:
+      - db
+      - redis
+      - rabbitmq
+    networks:
+      - cardibot_net_v1
+
+  worker:
+    image: cardibotdev-worker:latest
+    container_name: cardiobot_worker_v1
+    restart: always
+    command: python -m app.workers.embedding_worker
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - rabbitmq
+    networks:
+      - cardibot_net_v1
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginxCardiBot_v1
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+    networks:
+      - cardibot_net_v1
+
+volumes:
+  postgres_data_v1:
+  redis_data_v1:
+  rabbitmq_data_v1:
+
+networks:
+  cardibot_net_v1:
+    driver: bridge
